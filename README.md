@@ -7,14 +7,16 @@
 
 # Spejari
 
-**Spejari** (Old Norse *spæjari*, "scout") is a terminal war-driving tool for Debian-based Linux and Raspberry Pi. It drives **up to six Wi-Fi adapters at once**, splits the 2.4 GHz and 5 GHz channels between them automatically, tags every network with GPS coordinates from a **u-blox** receiver, shows everything in a live dashboard and, when you stop the session, writes a **WiGLE-format CSV** (compatible with WiGLE and wdgwars.pl-style uploads).
+**Spejari** (Old Norse *spæjari*, "scout") is a war-driving tool for Debian-based Linux and Raspberry Pi with **two interfaces: a terminal dashboard (CLI) and a desktop window (GUI, CustomTkinter)**. It drives **up to ten external Wi-Fi adapters at once**, splits the 2.4 GHz and 5 GHz channels between them automatically, tags every network with GPS coordinates from a **u-blox** receiver, shows everything in a live dashboard and, when you stop the session, writes a **WiGLE-format CSV** (compatible with WiGLE and wdgwars.pl-style uploads).
 
+- **Pick your interface:** `./run.sh --cli` (terminal, works over SSH) or `./run.sh --gui` (buttons, drop-down menus, live tables) - or choose at start-up
 - 2.4 GHz and 5 GHz Wi-Fi only (6 GHz is intentionally out of scope)
 - Passive-by-design data: SSID, BSSID, RSSI, channel, security type - nothing is ever connected to, attacked or decrypted
 - 1 adapter scans 100 % of the channels; N adapters share them equally; **hot-plug re-balances live**
 - GPS through `gpsd` or straight from `/dev/ttyACM*` / `/dev/ttyUSB*` (NMEA), with fix status, coordinates and kilometres driven
+- Results are always saved as lowercase `.csv` (never `.CSV`)
 - Crash-safe: every logged sighting is journalled to disk and can be recovered with `--recover`
-- Python 3.9+, one runtime dependency (`rich`)
+- Python 3.9+; dependencies: `rich` (CLI) and `customtkinter` (GUI, optional)
 
 ---
 
@@ -51,11 +53,11 @@ The supported channels of every adapter are read from `iw phy <phy> info`, so th
 |---------:|-----------|
 | 1 | Scans 100 % of the 2.4 / 5 GHz channels sequentially |
 | 2 | Each adapter scans ~50 % (interleaved so both bands are covered by both) |
-| 3-6 | The channels are divided as equally as the adapters' capabilities allow |
+| 3-10 | The channels are divided as equally as the adapters' capabilities allow (10 adapters = ~3 channels each) |
 
 The distribution is greedy and deterministic: channels that only some adapters support are placed first, then every channel goes to the least-loaded capable adapter. A 2.4 GHz-only dongle next to a dual-band one is therefore not starved. Every adapter's share is shown live in the dashboard.
 
-**Hot-plug:** the adapter list is polled every 2 s. Plug a dongle in or pull one out and Spejari starts/stops its worker and recomputes the channel plan within a couple of seconds - the session keeps running. Several virtual interfaces on one radio are collapsed into one adapter; interfaces in monitor or AP mode are ignored. A hard limit of six adapters applies (`--max-adapters`).
+**Hot-plug:** the adapter list is polled every 2 s. Plug a dongle in or pull one out and Spejari starts/stops its worker and recomputes the channel plan within a couple of seconds - the session keeps running. Several virtual interfaces on one radio are collapsed into one adapter; interfaces in monitor or AP mode are ignored. A hard limit of ten adapters applies (`--max-adapters`); extra adapters are listed as "over limit" and take over automatically if an active one is unplugged.
 
 ### GPS and distance
 
@@ -92,7 +94,7 @@ Use adapters with **in-kernel drivers** and good scan behaviour. Verify against 
 - The Raspberry Pi's onboard Wi-Fi (brcmfmac) scans both bands, but it is usually your SSH link - exclude it with `--exclude wlan0`
 - Mix and match is fine: Spejari reads each adapter's capabilities separately
 
-Prefer **adapters with external antennas** and, for six adapters, a **powered USB hub** (a USB Wi-Fi adapter can draw 300-500 mA each). Spread the antennas apart and keep them away from the GPS puck.
+Prefer **adapters with external antennas** and, for more than two adapters, **powered USB hubs** (a USB Wi-Fi adapter can draw 300-500 mA each, so ten adapters need several amps - use quality hubs with their own supply, ideally spread over more than one host port; a Pi 4/5 or a laptop is recommended over older Pis for ten adapters). Spread the antennas apart and keep them away from the GPS puck.
 
 ### GPS
 
@@ -114,21 +116,23 @@ Prefer **adapters with external antennas** and, for six adapters, a **powered US
 unzip spejari.zip && cd spejari          # or: git clone https://github.com/YOUR-USER/spejari.git
 
 # 2. install system packages and create a virtualenv
-./setup.sh                               # add --configure-gpsd to wire up a u-blox dongle
+./setup.sh                               # add --configure-gpsd to wire up a u-blox dongle; --no-gui for CLI-only
 
 # 3. check what Spejari sees
 ./run.sh --list-adapters
 
-# 4. go
-./run.sh
+# 4. go - choose the interface when asked, or pick it directly
+./run.sh            # asks: [1] CLI  [2] GUI
+./run.sh --cli      # terminal dashboard
+./run.sh --gui      # desktop window
 ```
 
-`setup.sh` installs `iw`, `gpsd`, `python3-venv` and friends via `apt`, creates `.venv/` and installs `requirements.txt`. Use `./setup.sh --no-apt` to only build the virtualenv.
+`setup.sh` installs `iw`, `gpsd`, `python3-venv`, `python3-tk` (for the GUI) and friends via `apt`, creates `.venv/` and installs `requirements.txt` (including CustomTkinter). Use `./setup.sh --no-apt` to only build the virtualenv.
 
 Manual installation:
 
 ```bash
-sudo apt install python3 python3-venv iw gpsd gpsd-clients
+sudo apt install python3 python3-venv python3-tk iw gpsd gpsd-clients
 python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 sudo .venv/bin/python main.py
 ```
@@ -163,8 +167,20 @@ Do **not** run gpsd and direct serial on the same device at the same time; `auto
 
 ## Usage
 
+Spejari has two front-ends that share the same engine (same scanning, GPS and CSV export):
+
+| | CLI | GUI |
+|---|---|---|
+| Start | `./run.sh --cli` | `./run.sh --gui` |
+| Best for | SSH, headless Pi, `tmux` | Laptop / Pi with a screen |
+| Options | command-line flags + `config/spejari.toml` | buttons, drop-down menus, switches |
+
+Run `./run.sh` without a flag and Spejari asks which one you want (set `default_mode = "cli"` or `"gui"` in `[ui]` to skip the question).
+
 ```bash
-./run.sh                                  # interactive dashboard
+./run.sh                                  # choose CLI or GUI
+./run.sh --cli                            # terminal dashboard
+./run.sh --gui                            # desktop window
 ./run.sh --exclude wlan0                  # leave the onboard Wi-Fi (SSH link) alone
 ./run.sh -i wlan1 -i wlan2                # use only these adapters
 ./run.sh --band 5 --skip-dfs              # 5 GHz only, skip radar channels
@@ -173,7 +189,24 @@ Do **not** run gpsd and direct serial on the same device at the same time; `auto
 ./run.sh --recover                        # rebuild CSVs from journals of crashed sessions
 ```
 
-### Keys
+### GUI
+
+```bash
+./run.sh --gui
+```
+
+- **Start session / Stop & export CSV** button (the same button toggles)
+- **Drop-down menus:** band (2.4 + 5 GHz / 2.4 only / 5 GHz only), scan type (active / passive), max adapters (1-10), GPS source (auto / gpsd / serial / none), serial GPS device (detected u-blox ports), required fix quality (2D / 3D)
+- **Switch:** skip 5 GHz DFS channels
+- **Output:** *Browse...* picks the export folder, *Open folder* shows your CSV files
+- **Adapters table:** one row per adapter with a **Use** checkbox - untick to exclude an adapter on the fly, tick it again to bring it back; channels are re-balanced within seconds. Shows driver, channel share, the channel being scanned, hits and state
+- **Cards:** session timer, unique SSIDs, BSSIDs, rows logged, distance (km), GPS status; below them live coordinates, altitude, speed and satellites
+- **Live feed table:** newest sightings at the bottom (green = new, grey = update, red = open/WEP network)
+- Closing the window while a session runs asks to stop, export and quit
+
+Band, scan type, max adapters, DFS and adapter ticks apply live; GPS and output settings are locked while a session runs. Because scanning requires root, the GUI runs as root: `run.sh` keeps your desktop session variables through `sudo` and runs `xhost +SI:localuser:root` (local root only) so the window can open. On Wayland desktops this goes through XWayland.
+
+### Keys (CLI)
 
 | Key | Action |
 |-----|--------|
@@ -207,10 +240,11 @@ Do **not** run gpsd and direct serial on the same device at the same time; `auto
 
 | Option | Description |
 |--------|-------------|
+| `--cli` / `--gui` | Choose the terminal dashboard or the desktop window (default: ask at start-up) |
 | `-c, --config FILE` | Use a specific TOML config |
 | `-i, --interface IF` | Use only this adapter (repeatable) |
 | `-x, --exclude IF` | Never use this adapter (repeatable) |
-| `-n, --max-adapters N` | Adapter limit, 1-6 |
+| `-n, --max-adapters N` | Adapter limit, 1-10 |
 | `-b, --band {both,2.4,5}` | Restrict bands |
 | `--skip-dfs` | Skip 5 GHz DFS channels (52-144) |
 | `--passive` | Passive scans only |
@@ -226,13 +260,13 @@ Do **not** run gpsd and direct serial on the same device at the same time; `auto
 
 ## Configuration
 
-All defaults live in [`config/spejari.toml`](config/spejari.toml) with comments. CLI flags override the file. Sections: `[scan]`, `[log]`, `[gps]`, `[ui]`.
+All defaults live in [`config/spejari.toml`](config/spejari.toml) with comments. CLI flags override the file. Sections: `[scan]`, `[log]`, `[gps]`, `[ui]` (`default_mode = "ask" | "cli" | "gui"`).
 
 ---
 
 ## Output format and uploading
 
-On stop, Spejari writes `exports/Spejari_YYYY-MM-DD_HH-MM-SS.csv` (timestamp = session start, local time). Files created under `sudo` are handed back to your user. The format is **WigleWifi-1.4**:
+On stop, Spejari writes `exports/Spejari_YYYY-MM-DD_HH-MM-SS.csv` (the extension is always lowercase `.csv`) (timestamp = session start, local time). Files created under `sudo` are handed back to your user. The format is **WigleWifi-1.4**:
 
 ```
 WigleWifi-1.4,appRelease=Spejari 1.0.0,model=Raspberry Pi 4 Model B Rev 1.4,release=6.6.31+rpt-rpi-v8,device=raspberrypi,display=,board=aarch64,brand=Spejari
@@ -257,11 +291,11 @@ spejari/
 ├── main.py               entry point (sudo ./run.sh)
 ├── run.sh                launcher: venv python + sudo
 ├── setup.sh              apt packages, venv, optional gpsd configuration
-├── requirements.txt      rich (+ tomli on Python < 3.11)
+├── requirements.txt      rich, customtkinter (+ tomli on Python < 3.11)
 ├── config/spejari.toml   documented defaults
 ├── spejari/
 │   ├── cli.py            argument parsing, --list-adapters, --recover
-│   ├── app.py            controller: start/stop session, export, main loop
+│   ├── app.py            controller shared by CLI and GUI: sessions, export, main loop
 │   ├── scanner.py        scan workers + hot-plug aware cluster manager
 │   ├── channels.py       channel maths and the load-balancing algorithm
 │   ├── adapters.py       adapter detection and capability parsing (iw)
@@ -269,7 +303,8 @@ spejari/
 │   ├── gps.py            gpsd client, NMEA parser, serial reader, distance tracker
 │   ├── session.py        de-duplication, logging policy, statistics
 │   ├── exporter.py       WiGLE CSV writer, crash-safe journal, recovery
-│   ├── ui.py             rich dashboard and keyboard handling
+│   ├── ui.py             CLI: rich dashboard and keyboard handling
+│   ├── gui.py            GUI: CustomTkinter window (buttons, drop-downs, tables)
 │   ├── config.py         TOML config + defaults
 │   ├── models.py         shared dataclasses
 │   └── geo.py            haversine distance
@@ -292,7 +327,9 @@ spejari/
 
 | Symptom | Fix |
 |---------|-----|
-| `Scanning needs root privileges` | Start with `sudo ./run.sh` |
+| `Scanning needs root privileges` | Start with `./run.sh` (it uses sudo) |
+| GUI: `Cannot open a display` / `no display name` | Start from a desktop session (not plain SSH), use `./run.sh --gui` (keeps `DISPLAY`/`XAUTHORITY` through sudo), or run `xhost +SI:localuser:root` first |
+| GUI: `No module named tkinter` / `customtkinter` | `sudo apt install python3-tk` and `.venv/bin/pip install customtkinter` (or re-run `./setup.sh`); the CLI works without them |
 | `No scan-capable wireless adapter detected` | `./run.sh --list-adapters`; check `iw dev`, `rfkill list` (`sudo rfkill unblock wifi`), driver/firmware |
 | State shows `busy` constantly | NetworkManager / wpa_supplicant is scanning on the same adapter: `sudo nmcli device set wlan1 managed no` |
 | Scan disconnects my SSH session | You are scanning the interface that carries it - use `--exclude wlan0` |
@@ -311,7 +348,7 @@ python3 -m venv .venv && .venv/bin/pip install -r requirements-dev.txt
 .venv/bin/python -m pytest -q
 ```
 
-The test suite covers channel distribution (1-6 adapters, mixed capabilities), `iw` output parsing, security detection, NMEA parsing, distance filtering, CSV format and journal recovery. The scanner only shells out to `iw`, which makes it easy to run against a fake `iw` script for integration testing.
+The test suite covers channel distribution (1-10 adapters, mixed capabilities), `iw` output parsing, security detection, NMEA parsing, distance filtering, CSV format and journal recovery. The scanner only shells out to `iw`, which makes it easy to run against a fake `iw` script for integration testing. The GUI can be exercised headlessly with `xvfb-run`.
 
 ---
 
