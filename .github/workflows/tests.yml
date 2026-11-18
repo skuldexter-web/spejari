@@ -4,18 +4,26 @@ on:
   push:
   pull_request:
 
+# The tests run inside official Python containers instead of actions/setup-python:
+# GitHub's newest Ubuntu runner has no build of older Pythons (3.9 is end-of-life), and the
+# Debian-based images match what Spejari runs on (Raspberry Pi OS, Debian, Kali).
 jobs:
   pytest:
+    name: pytest (${{ matrix.image }})
+    runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest]
-        python: ["3.9", "3.11", "3.12"]
-    runs-on: ${{ matrix.os }}
+        image:
+          - python:3.9-slim-bullseye    # Raspberry Pi OS Bullseye / Debian 11
+          - python:3.11-slim-bookworm   # Raspberry Pi OS Bookworm / Debian 12
+          - python:3.12-slim
+          - python:3.13-slim            # Kali rolling
+    container: ${{ matrix.image }}
+    env:
+      PIP_ROOT_USER_ACTION: ignore
+      PIP_DISABLE_PIP_VERSION_CHECK: "1"
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: ${{ matrix.python }}
       - run: python -m pip install -r requirements-dev.txt
       - run: python -m pytest
