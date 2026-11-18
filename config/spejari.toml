@@ -1,0 +1,77 @@
+# Spejari configuration. Every value shown is the built-in default.
+# Command-line flags override this file (see `./run.sh --help`). Choices made in the GUI (theme, mode,
+# privacy, auto-upload) are remembered in config/.spejari_user.json and win over this file.
+
+[drive]
+mode = "wifi"               # wifi | ble | adsb | wifi+ble | all   (any "+" combination works, e.g. "ble+adsb")
+
+[scan]                      # Wi-Fi: the channels are split across the adapters (channel clustering)
+max_adapters = 10           # hard limit is 10
+include_interfaces = []     # e.g. ["wlan1", "wlan2"]; empty = all
+exclude_interfaces = []     # e.g. the adapter that carries your SSH / internet link
+band_2g = true
+band_5g = true
+adapter_poll_interval = 2.0 # seconds between hot-plug checks
+skip_dfs = false            # true = skip 5 GHz radar (DFS) channels 52-144
+exclude_channels = []       # channel numbers to never scan, e.g. [12, 13, 14]
+passive = false             # true = never transmit probe requests (slower on hidden SSIDs)
+channels_per_scan = 1       # channels per `iw scan` call (1-8); higher = fewer process spawns
+scan_timeout = 20.0         # seconds before a stuck scan is abandoned
+
+[log]
+output_dir = "exports"      # relative paths are resolved against the project folder
+min_distance_m = 25.0       # log a known network again after moving this far...
+rssi_improvement_db = 8     # ...or when its signal is this much stronger than ever logged
+feed_update_interval = 5.0  # seconds between live-feed refreshes of the same BSSID
+
+[gps]
+source = "auto"             # auto | gpsd | serial | none
+gpsd_host = "127.0.0.1"
+gpsd_port = 2947
+serial_port = ""            # e.g. "/dev/ttyACM0"; empty = auto-detect (u-blox first)
+baud = 0                    # 0 = auto-detect (irrelevant for USB-CDC u-blox dongles)
+probe_other_ports = false   # also probe non-u-blox serial ports
+min_fix_mode = 2            # 2 = accept 2D fixes, 3 = require a 3D fix before logging
+min_step_m = 5.0            # ignore GPS jitter smaller than this when summing distance
+max_speed_mps = 70.0        # reject position jumps implying more than ~250 km/h
+stale_after_s = 5.0         # fix is treated as lost after this many seconds of silence
+
+[ui]
+default_mode = "ask"        # ask = pick at start-up | cli | gui
+refresh_hz = 4.0
+feed_history = 500
+theme = "sk7ld"             # sk7ld (Sk7ld) | v1ru5 (V1RU5) | cvlt (cvlt of bahp0mau5)
+privacy = false             # true = hide SSIDs and Bluetooth names in the live feed (the CSV keeps them)
+
+# --- Bluetooth LE (needs the bleak package and the BlueZ service) ------------------------------
+[bluetooth]
+max_adapters = 5            # up to 5 adapters at once (hci0 ... hci4)
+include_adapters = []       # e.g. ["hci1"]; empty = all
+exclude_adapters = []       # e.g. ["hci0"] to keep the built-in adapter free
+log_random = false          # random private addresses rotate; false = show but do not log them
+min_rssi = -100             # ignore anything weaker than this (dBm)
+
+# --- ADS-B aircraft tracking with RTL-SDR dongles ----------------------------------------------
+[adsb]
+mode = "managed"            # managed = Spejari starts one decoder per dongle | external = use a running decoder
+decoder = "auto"            # auto | readsb | dump1090-fa | dump1090-mutability | dump1090 | full path
+devices = ["0"]             # RTL-SDR device indexes, one decoder process each (managed mode)
+gain = "auto"               # "auto" or a number in dB, e.g. "40.2"
+ppm = 0                     # frequency correction
+base_port = 30103           # SBS port of dongle 0; dongle N uses base_port + 10*N
+extra_args = []             # extra decoder arguments, e.g. ["--lat", "52.2", "--lon", "21.0"]
+external_host = "127.0.0.1" # external mode: where the SBS (BaseStation) feed is
+external_port = 30003
+max_age_s = 60.0            # drop an aircraft from the live list after this much silence
+log_interval_s = 5.0        # at most one logged position per aircraft per this many seconds
+
+# --- Uploads to WiGLE and WDGWars ----------------------------------------------------------------
+# Keys are NOT stored here: run `./run.sh --keys` or use the GUI's API keys button
+# (saved in config/.spejari_keys.json with permissions 600), or set WIGLE_API_NAME,
+# WIGLE_API_TOKEN and WDGWARS_API_KEY in the environment.
+[upload]
+auto = "off"                # off | wigle | wdgwars | both  - upload each drive as soon as it is stopped
+wigle_donate = false        # WiGLE "donate": allow commercial use of your uploaded data
+wdgwars_adsb = true         # also send ADS-B aircraft files to WDGWars (WiGLE does not take them)
+chunk_rows = 10000          # WDGWars: rows per request; lower it if big uploads time out
+timeout_s = 180.0

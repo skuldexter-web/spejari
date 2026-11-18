@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+build/
+dist/
+*.spec
+*.egg-info/
+
+# Spejari output and local state
+exports/*
+!exports/.gitkeep
+.spejari_*.journal
+config/.spejari_user.json
+config/.spejari_keys.json
+config/*.tmp
+tools/
+
+# editors / OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
